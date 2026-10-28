@@ -16,15 +16,24 @@ esac
 
 root=$(cd "$(dirname "$0")" && pwd)
 cd "$root"
-command -v bsub >/dev/null
+if ! command -v bsub >/dev/null; then
+    echo "bsub not found. Run this script on Polus with LSF available." >&2
+    exit 1
+fi
 if [ ! -x "build/poisson_$mode" ]; then
     echo "Run make $mode first" >&2
     exit 1
 fi
 if [ "$mode" = seq ] || [ "$mode" = omp ]; then
-    test -x /polusfs/lsf/openmp/launchOpenMP.py
+    if [ ! -x /polusfs/lsf/openmp/launchOpenMP.py ]; then
+        echo "OpenMP launcher not found: /polusfs/lsf/openmp/launchOpenMP.py" >&2
+        exit 1
+    fi
 else
-    command -v mpiexec >/dev/null
+    if ! command -v mpiexec >/dev/null; then
+        echo "mpiexec not found. Run: module load SpectrumMPI" >&2
+        exit 1
+    fi
 fi
 
 out="$root/results/${mode}_$(date +%Y%m%d_%H%M%S)"
