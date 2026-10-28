@@ -7,10 +7,10 @@ if [ "$#" -ne 1 ]; then
 fi
 mode=$1
 case "$mode" in
-    seq) p=1; t=1 ;;
-    omp) p=1; t=16 ;;
-    mpi) p=4; t=1 ;;
-    hybrid) p=2; t=4 ;;
+    seq) p=1; cores=1; span='span[hosts=1]' ;;
+    omp) p=1; cores=16; span='span[hosts=1]' ;;
+    mpi) p=32; cores=1; span='span[ptile=16]' ;;
+    hybrid) p=4; cores=8; span='span[ptile=2]' ;;
     *) echo "Unknown mode: $mode" >&2; exit 1 ;;
 esac
 
@@ -33,9 +33,9 @@ mkdir "$out"
 {
     printf '#!/bin/bash\n'
     printf '#BSUB -J task1_%s\n' "$mode"
-    printf '#BSUB -q short\n#BSUB -W 00:15\n'
+    printf '#BSUB -q normal\n#BSUB -W 03:00\n'
     printf '#BSUB -n %s\n' "$p"
-    printf '#BSUB -R "span[hosts=1] affinity[core(%s)]"\n' "$t"
+    printf '#BSUB -R "%s affinity[core(%s)]"\n' "$span" "$cores"
     printf 'exec /bin/bash'
     printf ' %q' "$root/run.sh" "$mode" "$out"
     printf '\n'

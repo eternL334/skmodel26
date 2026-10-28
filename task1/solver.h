@@ -30,6 +30,7 @@ struct Result {
 double cell_area(double x, double y, double hx, double hy);
 void coefficients(int i, int j, int M, int N, double hx, double hy, double eps,
                   double &theta, double &q, double &diag, double &b);
+double local_dot(const std::vector<double> &a, const std::vector<double> &b);
 double dot(const Grid &g, const std::vector<double> &a,
            const std::vector<double> &b);
 void apply_A(const Grid &g, const std::vector<double> &v,

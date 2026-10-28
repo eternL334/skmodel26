@@ -107,11 +107,7 @@ void apply_A(LocalGrid &g, const std::vector<double> &v, std::vector<double> &ou
 
 double dot(const LocalGrid &g, const std::vector<double> &a,
            const std::vector<double> &b) {
-    double local = 0, total = 0;
-#ifdef _OPENMP
-#pragma omp parallel for reduction(+:local) schedule(static)
-#endif
-    for (int k = 0; k < g.size; ++k) local += a[k]*b[k];
+    double local = local_dot(a,b), total = 0;
     MPI_Allreduce(&local,&total,1,MPI_DOUBLE,MPI_SUM,g.comm);
     return total*g.hx*g.hy;
 }

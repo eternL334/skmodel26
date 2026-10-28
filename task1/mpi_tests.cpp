@@ -125,7 +125,11 @@ int main(int argc, char **argv) {
         if (rank == 0) std::cout << "OpenMP threads per process: " << threads << '\n';
 #endif
         const int p[] = {1,2,4,8,16,32};
-        for (int i = 0; i < 6; ++i) check_partition(80,80,p[i]);
+        for (int i = 0; i < 6; ++i) {
+            check_partition(80,80,p[i]);
+            check_partition(400,600,p[i]);
+            check_partition(800,1200,p[i]);
+        }
         check_partition(81,77,6);
         check_partition(79,39,1);
         check_partition(3,3,4);

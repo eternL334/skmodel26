@@ -14,32 +14,36 @@ hostname
 printf 'job %s\nmode %s\n' "$LSB_JOBID" "$mode"
 
 run_case() {
-    local n=$1 p=$2 t=$3 prefix
-    prefix="$out/${n}x${n}_p${p}_t${t}"
+    local m=$1 n=$2 p=$3 t=$4 prefix
+    prefix="$out/${m}x${n}_p${p}_t${t}"
     export OMP_NUM_THREADS=$t
-    echo "Grid ${n}x${n}, processes $p, threads $t"
+    echo "Grid ${m}x${n}, processes $p, threads $t"
     if [ "$mode" = seq ] || [ "$mode" = omp ]; then
         /polusfs/lsf/openmp/launchOpenMP.py "$root/build/poisson_$mode" \
-            "$n" "$n" 1e-8 "$prefix" > "${prefix}_summary.txt"
+            "$m" "$n" 1e-8 "$prefix" > "${prefix}_summary.txt"
     else
         mpiexec -n "$p" "$root/build/poisson_$mode" \
-            "$n" "$n" 1e-8 "$prefix" > "${prefix}_summary.txt"
+            "$m" "$n" 1e-8 "$prefix" > "${prefix}_summary.txt"
     fi
     cat "${prefix}_summary.txt"
 }
 
 case "$mode" in
     seq)
-        for n in 20 40 80; do run_case "$n" 1 1; done
+        run_case 400 600 1 1
+        run_case 800 1200 1 1
         ;;
     omp)
-        for t in 1 4 16; do run_case 80 1 "$t"; done
+        for t in 2 4 8 16; do run_case 400 600 1 "$t"; done
+        for t in 4 8 16 32; do run_case 800 1200 1 "$t"; done
         ;;
     mpi)
-        for p in 1 2 4; do run_case 80 "$p" 1; done
+        for p in 2 4 8 16; do run_case 400 600 "$p" 1; done
+        for p in 4 8 16 32; do run_case 800 1200 "$p" 1; done
         ;;
     hybrid)
-        for p in 1 2; do run_case 80 "$p" 4; done
+        for t in 1 2 4 8; do run_case 400 600 2 "$t"; done
+        for t in 1 2 4 8; do run_case 800 1200 4 "$t"; done
         ;;
     *)
         echo "Unknown mode: $mode" >&2

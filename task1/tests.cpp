@@ -87,6 +87,10 @@ std::vector<double> direct_solve(const Grid &g) {
 
 int main() {
     try {
+        std::vector<double> terms(200000,1e-6), ones(terms.size(),1);
+        terms[0] = 1e8;
+        near(local_dot(terms,ones),1e8+(terms.size()-1)*1e-6,2e-7,
+             "small terms lost in a large dot product");
         near(cell_area(1,1,0.2,0.4),0.08,1e-14,"interior area");
         near(cell_area(-0.5,1,0.2,0.2),0,1e-14,"outside area");
         near(cell_area(0,0,0.2,0.2),0.01,1e-14,"corner area");

@@ -99,14 +99,31 @@ void apply_A(const Grid &g, const std::vector<double> &v,
     }
 }
 
+double local_dot(const std::vector<double> &a, const std::vector<double> &b) {
+    double s = 0;
+    int n = static_cast<int>(a.size());
+#ifdef _OPENMP
+#pragma omp parallel reduction(+:s)
+#endif
+    {
+        double part = 0, correction = 0;
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+        for (int k = 0; k < n; ++k) {
+            double value = a[k]*b[k]-correction;
+            double next = part+value;
+            correction = (next-part)-value;
+            part = next;
+        }
+        s += part;
+    }
+    return s;
+}
+
 double dot(const Grid &g, const std::vector<double> &a,
            const std::vector<double> &b) {
-    double s = 0;
-#ifdef _OPENMP
-#pragma omp parallel for reduction(+:s) schedule(static)
-#endif
-    for (int k = 0; k < g.size; ++k) s += a[k]*b[k];
-    return s*g.hx*g.hy;
+    return local_dot(a,b)*g.hx*g.hy;
 }
 
 Result solve(const Grid &g, double delta, int max_iter) {
