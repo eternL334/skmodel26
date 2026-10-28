@@ -22,8 +22,18 @@ run_case() {
         /polusfs/lsf/openmp/launchOpenMP.py "$root/build/poisson_$mode" \
             "$m" "$n" 1e-8 "$prefix" > "${prefix}_summary.txt"
     else
-        mpiexec -n "$p" "$root/build/poisson_$mode" \
+        mpiexec -n "$p" env OMP_NUM_THREADS="$t" OMP_DYNAMIC=FALSE \
+            "$root/build/poisson_$mode" \
             "$m" "$n" 1e-8 "$prefix" > "${prefix}_summary.txt"
+    fi
+    if ! awk -v t="$t" '
+        $1 == "threads" || $1 == "threads_min" || $1 == "threads_max" {
+            found = 1; if ($2 != t) bad = 1
+        }
+        END { exit (!found || bad) }
+    ' "${prefix}_summary.txt"; then
+        echo "Unexpected OpenMP thread count in ${prefix}_summary.txt" >&2
+        exit 1
     fi
     cat "${prefix}_summary.txt"
 }
