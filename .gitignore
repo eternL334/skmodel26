@@ -1,4 +1,5 @@
 .local/
+/output/
 build/
 results/
 __pycache__/
