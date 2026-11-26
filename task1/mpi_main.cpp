@@ -108,6 +108,7 @@ int main(int argc, char **argv) {
             double step = r.history.empty() ? 0 : r.history.back().step;
             std::cout << std::setprecision(12)
                       << "M " << M << "\nN " << N
+                      << "\ncompiler " << __VERSION__
                       << "\nmpi 1\nprocesses " << processes
                       << "\nopenmp " << openmp
                       << "\nthreads_min " << threads_min << "\nthreads_max " << threads_max

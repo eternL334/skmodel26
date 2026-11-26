@@ -1,5 +1,6 @@
 CXX = g++
 MPICXX = mpicxx
+export OMPI_CXX = $(CXX)
 CXXFLAGS = -O2 -std=c++11 -Wall -Wextra -pedantic
 MPIEXEC = mpiexec
 
@@ -21,10 +22,10 @@ build/poisson_seq: main.cpp solver.cpp solver.h pcg.h history.h placement.h | bu
 build/poisson_omp: main.cpp solver.cpp solver.h pcg.h history.h placement.h | build
 	$(CXX) $(CXXFLAGS) -fopenmp main.cpp solver.cpp -o $@
 
-build/poisson_mpi: mpi_main.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h history.h placement.h | build
+build/poisson_mpi: mpi_main.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h history.h placement.h Makefile | build
 	$(MPICXX) $(CXXFLAGS) mpi_main.cpp mpi_solver.cpp partition.cpp solver.cpp -o $@
 
-build/poisson_hybrid: mpi_main.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h history.h placement.h | build
+build/poisson_hybrid: mpi_main.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h history.h placement.h Makefile | build
 	$(MPICXX) $(CXXFLAGS) -fopenmp mpi_main.cpp mpi_solver.cpp partition.cpp solver.cpp -o $@
 
 build/tests: tests.cpp solver.cpp solver.h pcg.h | build
@@ -33,10 +34,10 @@ build/tests: tests.cpp solver.cpp solver.h pcg.h | build
 build/tests_omp: tests.cpp solver.cpp solver.h pcg.h | build
 	$(CXX) $(CXXFLAGS) -fopenmp tests.cpp solver.cpp -o $@
 
-build/tests_mpi: mpi_tests.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h | build
+build/tests_mpi: mpi_tests.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h Makefile | build
 	$(MPICXX) $(CXXFLAGS) mpi_tests.cpp mpi_solver.cpp partition.cpp solver.cpp -o $@
 
-build/tests_hybrid: mpi_tests.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h | build
+build/tests_hybrid: mpi_tests.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h Makefile | build
 	$(MPICXX) $(CXXFLAGS) -fopenmp mpi_tests.cpp mpi_solver.cpp partition.cpp solver.cpp -o $@
 
 test: build/tests
