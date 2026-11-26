@@ -2,7 +2,7 @@
 
 Уравнение Пуассона в трапеции. Последовательная программа, OpenMP, MPI и MPI+OpenMP.
 
-[Отчёт по первой серии расчётов](report/report.pdf) · [Исходник LaTeX](report/report.tex)
+[Отчёт](report/report.pdf) · [Исходник LaTeX](report/report.tex)
 
 ## Запуск на Полюсе
 
