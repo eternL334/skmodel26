@@ -36,9 +36,14 @@ else
     fi
 fi
 
-out="$root/results/${mode}_$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$root/results"
-mkdir "$out"
+if [ "$mode" = omp ] && [ ! -x build/poisson_seq ]; then
+    echo "Run make seq for the one-core comparison" >&2
+    exit 1
+fi
+base=${RESULTS_DIR:-$root/results}
+mkdir -p "$base"
+base=$(cd "$base" && pwd)
+out=$(mktemp -d "$base/${mode}_$(date +%Y%m%d_%H%M%S)_XXXXXX")
 {
     printf '#!/bin/bash\n'
     printf '#BSUB -J task1_%s\n' "$mode"

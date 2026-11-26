@@ -13,7 +13,7 @@ struct LocalGrid {
     Range xr, yr;
     MPI_Comm comm;
     MPI_Datatype column;
-    std::vector<double> theta, q, diag, b, halo;
+    std::vector<double> theta, q, diag, inv_diag, b, halo;
 
     LocalGrid(int m, int n, MPI_Comm world);
     ~LocalGrid();
@@ -27,6 +27,6 @@ double dot(const LocalGrid &g, const std::vector<double> &a,
            const std::vector<double> &b);
 Result solve(LocalGrid &g, double delta, int max_iter = 0);
 std::vector<double> gather_solution(const LocalGrid &g, const std::vector<double> &v,
-                                    std::vector<int> &layout);
+                                    std::vector<int> &layout, bool field = true);
 
 #endif

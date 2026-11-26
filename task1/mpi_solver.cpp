@@ -1,4 +1,5 @@
 #include "mpi_solver.h"
+#include "pcg.h"
 #include <algorithm>
 #include <cmath>
 #include <exception>
@@ -36,6 +37,7 @@ LocalGrid::LocalGrid(int m, int n, MPI_Comm world) : M(m), N(n) {
     theta.resize(size);
     q.resize(size);
     diag.resize(size);
+    inv_diag.resize(size);
     b.resize(size);
     halo.assign(static_cast<std::size_t>(slots),0);
 #ifdef _OPENMP
@@ -45,6 +47,7 @@ LocalGrid::LocalGrid(int m, int n, MPI_Comm world) : M(m), N(n) {
         for (int i = 0; i < nx; ++i) {
             int k = j*nx+i;
             coefficients(x0+i,y0+j,M,N,hx,hy,eps,theta[k],q[k],diag[k],b[k]);
+            inv_diag[k] = 1.0/diag[k];
         }
     }
     MPI_Type_vector(ny,1,stride,MPI_DOUBLE,&column);
@@ -78,31 +81,55 @@ void exchange(LocalGrid &g) {
                  &v[1],g.nx,MPI_DOUBLE,g.down,13,g.comm,MPI_STATUS_IGNORE);
 }
 
-void apply_A(LocalGrid &g, const std::vector<double> &v, std::vector<double> &out) {
-    out.resize(g.size);
+namespace {
+struct LocalStencil {
+    LocalGrid &g;
+    int nx, ny;
+    double cx, cy;
+
+    explicit LocalStencil(LocalGrid &grid) : g(grid), nx(g.nx), ny(g.ny),
+        cx(1/(g.hx*g.hx)), cy(1/(g.hy*g.hy)) {}
+
+    template<class F>
+    void once(F f) const {
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp master
 #endif
-    for (int j = 0; j < g.ny; ++j)
-        for (int i = 0; i < g.nx; ++i)
-            g.halo[(j+1)*g.stride+i+1] = v[j*g.nx+i];
-    exchange(g);
-    double cx = 1/(g.hx*g.hx), cy = 1/(g.hy*g.hy);
+        { f(); }
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp barrier
 #endif
-    for (int j = 0; j < g.ny; ++j) {
-        for (int i = 0; i < g.nx; ++i) {
-            int k = j*g.nx+i;
-            int c = (j+1)*g.stride+i+1;
-            double s = g.diag[k]*v[k];
-            s -= cx*g.halo[c-1];
-            s -= cx*g.halo[c+1];
-            s -= cy*g.halo[c-g.stride];
-            s -= cy*g.halo[c+g.stride];
-            out[k] = s;
-        }
     }
+
+    void sum(double *values, int count) const {
+        MPI_Allreduce(MPI_IN_PLACE,values,count,MPI_DOUBLE,MPI_SUM,g.comm);
+    }
+
+    void prepare(const std::vector<double> &v) const {
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+        for (int j = 0; j < ny; ++j)
+            for (int i = 0; i < nx; ++i)
+                g.halo[(j+1)*g.stride+i+1] = v[j*nx+i];
+        once([&] { exchange(g); });
+    }
+
+    double value(const std::vector<double> &v, int i, int j) const {
+        int k = j*nx+i;
+        int c = (j+1)*g.stride+i+1;
+        double s = g.diag[k]*v[k];
+        s -= cx*g.halo[c-1];
+        s -= cx*g.halo[c+1];
+        s -= cy*g.halo[c-g.stride];
+        s -= cy*g.halo[c+g.stride];
+        return s;
+    }
+};
+}
+
+void apply_A(LocalGrid &g, const std::vector<double> &v, std::vector<double> &out) {
+    apply_stencil(LocalStencil(g),v,out);
 }
 
 double dot(const LocalGrid &g, const std::vector<double> &a,
@@ -113,106 +140,18 @@ double dot(const LocalGrid &g, const std::vector<double> &a,
 }
 
 Result solve(LocalGrid &g, double delta, int max_iter) {
-    if (!std::isfinite(delta) || delta <= 0)
-        throw std::invalid_argument("delta must be positive and finite");
-    int total_size = (g.M-1)*(g.N-1);
-    if (max_iter == 0) max_iter = total_size;
-    if (max_iter < 1 || max_iter > total_size)
-        throw std::invalid_argument("invalid iteration limit");
-    Result ans;
-    ans.w.assign(g.size,0);
-    ans.converged = false;
-    ans.restarts = 0;
-    std::vector<double> r = g.b;
-    std::vector<double> z(g.size), p(g.size), ap(g.size), old_w(g.size);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-    for (int k = 0; k < g.size; ++k) {
-        z[k] = r[k]/g.diag[k];
-        p[k] = z[k];
-    }
-    double rho = dot(g,r,z);
-    double energy = 0;
-    if (dot(g,r,r) == 0) ans.converged = true;
-
-    for (int it = 0; it < max_iter && !ans.converged; ++it) {
-        apply_A(g,p,ap);
-        double den = dot(g,p,ap);
-        if (!(den > 0) || !std::isfinite(den) || !(rho > 0) || !std::isfinite(rho))
-            throw std::runtime_error("PCG breakdown");
-        double alpha = rho/den;
-        double step = std::abs(alpha)*std::sqrt(dot(g,p,p));
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-        for (int k = 0; k < g.size; ++k) {
-            old_w[k] = ans.w[k];
-            ans.w[k] += alpha*p[k];
-            r[k] -= alpha*ap[k];
-        }
-        double next_energy = -0.5*(dot(g,g.b,ans.w)+dot(g,r,ans.w));
-        if (!std::isfinite(next_energy) || !std::isfinite(step))
-            throw std::runtime_error("non-finite PCG result");
-        double tol = 128*std::numeric_limits<double>::epsilon()
-                   *(1+std::abs(energy)+std::abs(next_energy));
-        bool restart = next_energy > energy+tol;
-        if (restart) {
-            ans.w.swap(old_w);
-            apply_A(g,ans.w,ap);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-            for (int k = 0; k < g.size; ++k) r[k] = g.b[k]-ap[k];
-            next_energy = -0.5*(dot(g,g.b,ans.w)+dot(g,r,ans.w));
-            ++ans.restarts;
-        }
-        energy = next_energy;
-        double rr = dot(g,r,r);
-        Iteration row = {step,std::sqrt(rr),energy,restart};
-        ans.history.push_back(row);
-        if (rr == 0 || (!restart && step < delta)) {
-            ans.converged = true;
-            break;
-        }
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-        for (int k = 0; k < g.size; ++k) z[k] = r[k]/g.diag[k];
-        double next_rho = dot(g,r,z);
-        if (restart) {
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-            for (int k = 0; k < g.size; ++k) p[k] = z[k];
-        } else {
-            double beta = next_rho/rho;
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-            for (int k = 0; k < g.size; ++k) p[k] = z[k]+beta*p[k];
-        }
-        rho = next_rho;
-    }
-    apply_A(g,ans.w,ap);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-    for (int k = 0; k < g.size; ++k) r[k] = g.b[k]-ap[k];
-    ans.residual = std::sqrt(dot(g,r,r));
-    double bn = std::sqrt(dot(g,g.b,g.b));
-    ans.relative_residual = bn == 0 ? ans.residual : ans.residual/bn;
-    return ans;
+    return solve_pcg(g,LocalStencil(g),delta,max_iter);
 }
 
 std::vector<double> gather_solution(const LocalGrid &g, const std::vector<double> &v,
-                                    std::vector<int> &layout) {
+                                    std::vector<int> &layout, bool field) {
     int info[10] = {g.cx,g.cy,g.x0,g.y0,g.nx,g.ny,
                     g.xr.left,g.xr.right,g.yr.left,g.yr.right};
     layout.clear();
     if (g.rank == 0) layout.resize(10*g.processes);
     MPI_Gather(info,10,MPI_INT,g.rank == 0 ? layout.data() : 0,
                10,MPI_INT,0,g.comm);
+    if (!field) return std::vector<double>();
     std::vector<int> counts, offsets;
     std::vector<double> packed, result;
     if (g.rank == 0) {

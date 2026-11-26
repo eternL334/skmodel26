@@ -1,4 +1,6 @@
 #include "solver.h"
+#include "history.h"
+#include "placement.h"
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -7,9 +9,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 
 template <class T>
 T number(const char *s) {
@@ -21,7 +20,7 @@ T number(const char *s) {
     return x;
 }
 
-void save(const Grid &g, const Result &r, const std::string &prefix) {
+void save_solution(const Grid &g, const Result &r, const std::string &prefix) {
     std::ofstream out((prefix + "_solution.dat").c_str());
     if (!out) throw std::runtime_error("cannot open solution file");
     out << std::setprecision(17);
@@ -41,18 +40,6 @@ void save(const Grid &g, const Result &r, const std::string &prefix) {
     }
     out.close();
     if (!out) throw std::runtime_error("failed to write solution file");
-
-    std::ofstream log((prefix + "_history.dat").c_str());
-    if (!log) throw std::runtime_error("cannot open history file");
-    log << std::setprecision(17);
-    log << "iteration step residual energy restart\n";
-    for (std::size_t k = 0; k < r.history.size(); ++k) {
-        const Iteration &row = r.history[k];
-        log << k+1 << ' ' << row.step << ' ' << row.residual << ' '
-            << row.energy << ' ' << row.restart << '\n';
-    }
-    log.close();
-    if (!log) throw std::runtime_error("failed to write history file");
 }
 
 int main(int argc, char **argv) {
@@ -63,16 +50,11 @@ int main(int argc, char **argv) {
     try {
         int M = number<int>(argv[1]), N = number<int>(argv[2]);
         double delta = argc > 3 ? number<double>(argv[3]) : 1e-8;
-        int threads = 1, openmp = 0;
+        int openmp = 0;
 #ifdef _OPENMP
         openmp = 1;
-        omp_set_dynamic(0);
-#pragma omp parallel
-        {
-#pragma omp single
-            threads = omp_get_num_threads();
-        }
 #endif
+        int threads = measure_team(0);
         std::ostringstream name;
         name << "grid_" << M << '_' << N;
         if (openmp) name << "_omp" << threads;
@@ -100,7 +82,8 @@ int main(int argc, char **argv) {
                   << "\nrelative_residual " << r.relative_residual
                   << "\nseconds " << seconds
                   << "\nconverged " << r.converged << '\n';
-        save(g,r,prefix);
+        save_history(r,prefix);
+        if (!std::getenv("TASK1_SKIP_FIELD")) save_solution(g,r,prefix);
         return r.converged ? 0 : 2;
     } catch (const std::exception &e) {
         std::cerr << "Error: " << e.what() << '\n';

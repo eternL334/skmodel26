@@ -1,4 +1,5 @@
 #include "solver.h"
+#include "pcg.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -66,6 +67,7 @@ Grid::Grid(int m, int n) : M(m), N(n) {
     theta.resize(size);
     q.resize(size);
     diag.resize(size);
+    inv_diag.resize(size);
     b.resize(size);
 
 #ifdef _OPENMP
@@ -75,28 +77,36 @@ Grid::Grid(int m, int n) : M(m), N(n) {
         for (int i = 1; i < M; ++i) {
             int k = id(i,j);
             coefficients(i,j,M,N,hx,hy,eps,theta[k],q[k],diag[k],b[k]);
+            inv_diag[k] = 1.0/diag[k];
         }
     }
 }
 
-void apply_A(const Grid &g, const std::vector<double> &v,
-             std::vector<double> &out) {
-    out.resize(g.size);
-    double cx = 1/(g.hx*g.hx), cy = 1/(g.hy*g.hy);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-    for (int j = 1; j < g.N; ++j) {
-        for (int i = 1; i < g.M; ++i) {
-            int k = g.id(i,j);
-            double s = g.diag[k]*v[k];
-            if (i > 1) s -= cx*v[k-1];
-            if (i < g.M-1) s -= cx*v[k+1];
-            if (j > 1) s -= cy*v[k-(g.M-1)];
-            if (j < g.N-1) s -= cy*v[k+(g.M-1)];
-            out[k] = s;
-        }
+namespace {
+struct GridStencil : LocalReduction {
+    const Grid &g;
+    int nx, ny;
+    double cx, cy;
+
+    explicit GridStencil(const Grid &grid) : g(grid), nx(g.M-1), ny(g.N-1),
+        cx(1/(g.hx*g.hx)), cy(1/(g.hy*g.hy)) {}
+
+    void prepare(const std::vector<double> &) const {}
+
+    double value(const std::vector<double> &v, int i, int j) const {
+        int k = j*nx+i;
+        double s = g.diag[k]*v[k];
+        if (i > 0) s -= cx*v[k-1];
+        if (i+1 < nx) s -= cx*v[k+1];
+        if (j > 0) s -= cy*v[k-nx];
+        if (j+1 < ny) s -= cy*v[k+nx];
+        return s;
     }
+};
+}
+
+void apply_A(const Grid &g, const std::vector<double> &v, std::vector<double> &out) {
+    apply_stencil(GridStencil(g),v,out);
 }
 
 double local_dot(const std::vector<double> &a, const std::vector<double> &b) {
@@ -106,17 +116,12 @@ double local_dot(const std::vector<double> &a, const std::vector<double> &b) {
 #pragma omp parallel reduction(+:s)
 #endif
     {
-        double part = 0, correction = 0;
+        KahanSum part;
 #ifdef _OPENMP
 #pragma omp for schedule(static)
 #endif
-        for (int k = 0; k < n; ++k) {
-            double value = a[k]*b[k]-correction;
-            double next = part+value;
-            correction = (next-part)-value;
-            part = next;
-        }
-        s += part;
+        for (int k = 0; k < n; ++k) part.add(a[k]*b[k]);
+        s += part.value;
     }
     return s;
 }
@@ -127,101 +132,5 @@ double dot(const Grid &g, const std::vector<double> &a,
 }
 
 Result solve(const Grid &g, double delta, int max_iter) {
-    if (!std::isfinite(delta) || delta <= 0)
-        throw std::invalid_argument("delta must be positive and finite");
-    if (max_iter == 0) max_iter = g.size;
-    if (max_iter < 1 || max_iter > g.size)
-        throw std::invalid_argument("invalid iteration limit");
-
-    Result ans;
-    ans.w.assign(g.size, 0);
-    ans.converged = false;
-    ans.restarts = 0;
-    std::vector<double> r = g.b;
-    std::vector<double> z(g.size), p(g.size), ap(g.size), old_w(g.size);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-    for (int k = 0; k < g.size; ++k) {
-        z[k] = r[k]/g.diag[k];
-        p[k] = z[k];
-    }
-    double rho = dot(g,r,z);
-    double energy = 0;
-    if (dot(g,r,r) == 0) ans.converged = true;
-
-    for (int it = 0; it < max_iter && !ans.converged; ++it) {
-        apply_A(g,p,ap);
-        double den = dot(g,p,ap);
-        if (!(den > 0) || !std::isfinite(den) ||
-            !(rho > 0) || !std::isfinite(rho))
-            throw std::runtime_error("PCG breakdown");
-
-        double alpha = rho/den;
-        double step = std::abs(alpha)*std::sqrt(dot(g,p,p));
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-        for (int k = 0; k < g.size; ++k) {
-            old_w[k] = ans.w[k];
-            ans.w[k] += alpha*p[k];
-            r[k] -= alpha*ap[k];
-        }
-
-        double next_energy = -0.5*(dot(g,g.b,ans.w) + dot(g,r,ans.w));
-        if (!std::isfinite(next_energy) || !std::isfinite(step))
-            throw std::runtime_error("non-finite PCG result");
-        double tol = 128*std::numeric_limits<double>::epsilon()
-                   * (1 + std::abs(energy) + std::abs(next_energy));
-        bool restart = next_energy > energy + tol;
-
-        if (restart) {
-            ans.w.swap(old_w);
-            apply_A(g,ans.w,ap);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-            for (int k = 0; k < g.size; ++k) r[k] = g.b[k]-ap[k];
-            next_energy = -0.5*(dot(g,g.b,ans.w) + dot(g,r,ans.w));
-            ++ans.restarts;
-        }
-
-        energy = next_energy;
-        double rr = dot(g,r,r);
-        Iteration row = {step, std::sqrt(rr), energy, restart};
-        ans.history.push_back(row);
-        if (rr == 0 || (!restart && step < delta)) {
-            ans.converged = true;
-            break;
-        }
-
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-        for (int k = 0; k < g.size; ++k) z[k] = r[k]/g.diag[k];
-        double next_rho = dot(g,r,z);
-        if (restart) {
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-            for (int k = 0; k < g.size; ++k) p[k] = z[k];
-        } else {
-            double beta = next_rho/rho;
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-            for (int k = 0; k < g.size; ++k) p[k] = z[k] + beta*p[k];
-        }
-        rho = next_rho;
-    }
-
-    apply_A(g,ans.w,ap);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-    for (int k = 0; k < g.size; ++k) r[k] = g.b[k]-ap[k];
-    ans.residual = std::sqrt(dot(g,r,r));
-    double bn = std::sqrt(dot(g,g.b,g.b));
-    ans.relative_residual = bn == 0 ? ans.residual : ans.residual/bn;
-    return ans;
+    return solve_pcg(g,GridStencil(g),delta,max_iter);
 }

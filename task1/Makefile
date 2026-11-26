@@ -15,28 +15,28 @@ hybrid: build/poisson_hybrid
 build:
 	mkdir -p build
 
-build/poisson_seq: main.cpp solver.cpp solver.h | build
+build/poisson_seq: main.cpp solver.cpp solver.h pcg.h history.h placement.h | build
 	$(CXX) $(CXXFLAGS) main.cpp solver.cpp -o $@
 
-build/poisson_omp: main.cpp solver.cpp solver.h | build
+build/poisson_omp: main.cpp solver.cpp solver.h pcg.h history.h placement.h | build
 	$(CXX) $(CXXFLAGS) -fopenmp main.cpp solver.cpp -o $@
 
-build/poisson_mpi: mpi_main.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h | build
+build/poisson_mpi: mpi_main.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h history.h placement.h | build
 	$(MPICXX) $(CXXFLAGS) mpi_main.cpp mpi_solver.cpp partition.cpp solver.cpp -o $@
 
-build/poisson_hybrid: mpi_main.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h | build
+build/poisson_hybrid: mpi_main.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h history.h placement.h | build
 	$(MPICXX) $(CXXFLAGS) -fopenmp mpi_main.cpp mpi_solver.cpp partition.cpp solver.cpp -o $@
 
-build/tests: tests.cpp solver.cpp solver.h | build
+build/tests: tests.cpp solver.cpp solver.h pcg.h | build
 	$(CXX) $(CXXFLAGS) tests.cpp solver.cpp -o $@
 
-build/tests_omp: tests.cpp solver.cpp solver.h | build
+build/tests_omp: tests.cpp solver.cpp solver.h pcg.h | build
 	$(CXX) $(CXXFLAGS) -fopenmp tests.cpp solver.cpp -o $@
 
-build/tests_mpi: mpi_tests.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h | build
+build/tests_mpi: mpi_tests.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h | build
 	$(MPICXX) $(CXXFLAGS) mpi_tests.cpp mpi_solver.cpp partition.cpp solver.cpp -o $@
 
-build/tests_hybrid: mpi_tests.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h | build
+build/tests_hybrid: mpi_tests.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h | build
 	$(MPICXX) $(CXXFLAGS) -fopenmp mpi_tests.cpp mpi_solver.cpp partition.cpp solver.cpp -o $@
 
 test: build/tests

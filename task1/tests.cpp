@@ -1,4 +1,5 @@
 #include "solver.h"
+#include "pcg.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -85,8 +86,35 @@ std::vector<double> direct_solve(const Grid &g) {
     return x;
 }
 
+struct RestartStencil : LocalReduction {
+    int nx = 3, ny = 1;
+
+    void prepare(const std::vector<double> &) const {}
+
+    double value(const std::vector<double> &v, int i, int) const {
+        if (i == 0) return v[0]-4*v[1];
+        if (i == 1) return v[0]+v[1];
+        return v[2];
+    }
+};
+
+void check_restart() {
+    Grid g(4,2);
+    g.b = {1,0,0};
+    g.inv_diag.assign(3,1);
+    Result r = solve_pcg(g,RestartStencil(),1e-12,3);
+    check(r.history.size() == 3 && r.restarts == 2, "missing PCG restarts");
+    check(!r.history[0].restart && r.history[1].restart && r.history[2].restart,
+          "unexpected step accepted");
+    check(r.w == std::vector<double>({1,0,0}), "rollback lost accepted solution");
+    near(r.history[1].energy,r.history[0].energy,1e-14,"rollback energy");
+    near(r.history[1].residual,r.residual,1e-14,"rollback residual");
+    near(r.history[2].step,std::sqrt(g.hx*g.hy),1e-14,"restart direction");
+}
+
 int main() {
     try {
+        check_restart();
         std::vector<double> terms(200000,1e-6), ones(terms.size(),1);
         terms[0] = 1e8;
         near(local_dot(terms,ones),1e8+(terms.size()-1)*1e-6,2e-7,

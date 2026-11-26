@@ -6,7 +6,7 @@
 struct Grid {
     int M, N, size;
     double hx, hy, eps;
-    std::vector<double> theta, q, diag, b;
+    std::vector<double> theta, q, diag, inv_diag, b;
 
     Grid(int m, int n);
     int id(int i, int j) const;

@@ -1,4 +1,6 @@
 #include "mpi_solver.h"
+#include "history.h"
+#include "placement.h"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -7,9 +9,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 
 template <class T>
 T number(const char *s) {
@@ -21,8 +20,7 @@ T number(const char *s) {
     return x;
 }
 
-void save_mpi(const LocalGrid &g, const Result &r, const std::vector<double> &w,
-              const std::vector<int> &layout, const std::string &prefix) {
+void save_solution(const LocalGrid &g, const std::vector<double> &w, const std::string &prefix) {
     std::ofstream out((prefix+"_solution.dat").c_str());
     if (!out) throw std::runtime_error("cannot open solution file");
     out << std::setprecision(17) << "i j x y w inside theta\n";
@@ -42,18 +40,9 @@ void save_mpi(const LocalGrid &g, const Result &r, const std::vector<double> &w,
     }
     out.close();
     if (!out) throw std::runtime_error("failed to write solution file");
+}
 
-    std::ofstream log((prefix+"_history.dat").c_str());
-    if (!log) throw std::runtime_error("cannot open history file");
-    log << std::setprecision(17) << "iteration step residual energy restart\n";
-    for (std::size_t k = 0; k < r.history.size(); ++k) {
-        const Iteration &row = r.history[k];
-        log << k+1 << ' ' << row.step << ' ' << row.residual << ' '
-            << row.energy << ' ' << row.restart << '\n';
-    }
-    log.close();
-    if (!log) throw std::runtime_error("failed to write history file");
-
+void save_domains(const LocalGrid &g, const std::vector<int> &layout, const std::string &prefix) {
     std::ofstream domains((prefix+"_domains.dat").c_str());
     if (!domains) throw std::runtime_error("cannot open domain layout file");
     domains << "rank cx cy i_first j_first nx ny left right bottom top geom_nx geom_ny\n";
@@ -86,16 +75,11 @@ int main(int argc, char **argv) {
     try {
         if (provided < required)
             throw std::runtime_error("MPI thread support is insufficient");
-        int threads = 1, openmp = 0, threads_min, threads_max;
+        int openmp = 0;
 #ifdef _OPENMP
         openmp = 1;
-        omp_set_dynamic(0);
-#pragma omp parallel
-        {
-#pragma omp single
-            threads = omp_get_num_threads();
-        }
 #endif
+        int threads = measure_team(rank), threads_min, threads_max;
         MPI_Allreduce(&threads,&threads_min,1,MPI_INT,MPI_MIN,MPI_COMM_WORLD);
         MPI_Allreduce(&threads,&threads_max,1,MPI_INT,MPI_MAX,MPI_COMM_WORLD);
         int M = number<int>(argv[1]), N = number<int>(argv[2]);
@@ -117,7 +101,8 @@ int main(int argc, char **argv) {
         for (int k = 0; k < g.size; ++k) local_area += g.theta[k]*g.hx*g.hy;
         MPI_Reduce(&local_area,&area,1,MPI_DOUBLE,MPI_SUM,0,g.comm);
         std::vector<int> layout;
-        std::vector<double> full = gather_solution(g,r.w,layout);
+        bool field = !std::getenv("TASK1_SKIP_FIELD");
+        std::vector<double> full = gather_solution(g,r.w,layout,field);
         status = r.converged ? 0 : 2;
         if (rank == 0) {
             double step = r.history.empty() ? 0 : r.history.back().step;
@@ -140,7 +125,9 @@ int main(int argc, char **argv) {
                       << "\nrelative_residual " << r.relative_residual
                       << "\nseconds " << seconds
                       << "\nconverged " << r.converged << '\n';
-            save_mpi(g,r,full,layout,prefix);
+            save_history(r,prefix);
+            save_domains(g,layout,prefix);
+            if (field) save_solution(g,full,prefix);
         }
     } catch (const std::exception &e) {
         std::cerr << "Rank " << rank << ": " << e.what() << '\n';
