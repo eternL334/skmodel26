@@ -32,6 +32,13 @@
   },
   "excluded_failed_jobs": [1629248, 1629249],
   "repetitions": [1, 2, 3, 4, 5],
+  "mpi_single_rank_control": {
+    "source": "mpi1_comparison.txt (Polus job output supplied as summary statistics)",
+    "M": 800, "N": 1200, "repetitions_per_program": 5,
+    "reference_mpi32_job_id": 1629257,
+    "median": {"seq_s": 56.2185, "mpi1_s": 79.1235, "mpi32_s": 1.7804, "seq_over_mpi1": 0.711, "mpi1_over_mpi32": 44.440, "seq_over_mpi32": 31.58},
+    "mean": {"seq_s": 56.2191, "mpi1_s": 79.6785, "mpi32_s": 1.8117, "seq_over_mpi1": 0.706, "mpi1_over_mpi32": 43.981, "seq_over_mpi32": 31.03}
+  },
   "configurations": [
     {
       "job": "seq",
