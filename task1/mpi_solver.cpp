@@ -63,6 +63,7 @@ LocalGrid::~LocalGrid() {
 void exchange(LocalGrid &g) {
     std::vector<double> &v = g.halo;
     int s = g.stride;
+    PHASE_START(border_start);
     for (int j = 1; j <= g.ny; ++j) {
         v[j*s] = 0;
         v[j*s+g.nx+1] = 0;
@@ -71,14 +72,19 @@ void exchange(LocalGrid &g) {
         v[i] = 0;
         v[(g.ny+1)*s+i] = 0;
     }
+    PHASE_END(border_start,borders);
+    PHASE_START(x_start);
     MPI_Sendrecv(&v[s+1],1,g.column,g.left,10,
                  &v[s+g.nx+1],1,g.column,g.right,10,g.comm,MPI_STATUS_IGNORE);
     MPI_Sendrecv(&v[s+g.nx],1,g.column,g.right,11,
                  &v[s],1,g.column,g.left,11,g.comm,MPI_STATUS_IGNORE);
+    PHASE_END(x_start,exchange_x);
+    PHASE_START(y_start);
     MPI_Sendrecv(&v[s+1],g.nx,MPI_DOUBLE,g.down,12,
                  &v[(g.ny+1)*s+1],g.nx,MPI_DOUBLE,g.up,12,g.comm,MPI_STATUS_IGNORE);
     MPI_Sendrecv(&v[g.ny*s+1],g.nx,MPI_DOUBLE,g.up,13,
                  &v[1],g.nx,MPI_DOUBLE,g.down,13,g.comm,MPI_STATUS_IGNORE);
+    PHASE_END(y_start,exchange_y);
 }
 
 namespace {
@@ -102,16 +108,20 @@ struct LocalStencil {
     }
 
     void sum(double *values, int count) const {
+        PHASE_START(reduce_start);
         MPI_Allreduce(MPI_IN_PLACE,values,count,MPI_DOUBLE,MPI_SUM,g.comm);
+        PHASE_END(reduce_start,allreduce);
     }
 
     void prepare(const std::vector<double> &v) const {
+        PHASE_START(pack_start);
 #ifdef _OPENMP
 #pragma omp for schedule(static)
 #endif
         for (int j = 0; j < ny; ++j)
             for (int i = 0; i < nx; ++i)
                 g.halo[(j+1)*g.stride+i+1] = v[j*nx+i];
+        PHASE_END(pack_start,pack);
         once([&] { exchange(g); });
     }
 

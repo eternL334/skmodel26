@@ -33,3 +33,5 @@ tar -czf task1-review.tar.gz \
     --exclude='800x1200*_solution.dat' \
     -C "$RESULTS_DIR" .
 ```
+
+Для профилирования MPI на одном узле выполните `make mpi-profile` и `bash submit.sh mpi-profile`. В одном задании пять раз проверяются 2 и 4 процесса на сетке 400×600, 8 и 16 процессов на сетке 800×1200. Скрипт собирает архив `mpi-phases.tar.gz`. Внутри лежат сводка `phase_summary.txt` и времена каждого процесса с привязкой к ядрам и сокетам в `rank_phases.txt`. Таймеры фаз охватывают итерационный цикл. Столбцы `exchange_x`, `exchange_y` и `allreduce` включают ожидание внутри вызовов MPI.

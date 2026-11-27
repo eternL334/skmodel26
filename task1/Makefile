@@ -4,40 +4,44 @@ export OMPI_CXX = $(CXX)
 CXXFLAGS = -O2 -std=c++11 -Wall -Wextra -pedantic
 MPIEXEC = mpiexec
 
-.PHONY: all seq omp mpi hybrid test test-omp test-mpi test-hybrid clean
+.PHONY: all seq omp mpi mpi-profile hybrid test test-omp test-mpi test-hybrid clean
 
 all: seq omp mpi hybrid
 
 seq: build/poisson_seq
 omp: build/poisson_omp
 mpi: build/poisson_mpi
+mpi-profile: build/poisson_mpi-profile
 hybrid: build/poisson_hybrid
 
 build:
 	mkdir -p build
 
-build/poisson_seq: main.cpp solver.cpp solver.h pcg.h history.h placement.h | build
+build/poisson_seq: main.cpp solver.cpp solver.h pcg.h mpi_profile.h history.h placement.h | build
 	$(CXX) $(CXXFLAGS) main.cpp solver.cpp -o $@
 
-build/poisson_omp: main.cpp solver.cpp solver.h pcg.h history.h placement.h | build
+build/poisson_omp: main.cpp solver.cpp solver.h pcg.h mpi_profile.h history.h placement.h | build
 	$(CXX) $(CXXFLAGS) -fopenmp main.cpp solver.cpp -o $@
 
-build/poisson_mpi: mpi_main.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h history.h placement.h Makefile | build
+build/poisson_mpi: mpi_main.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h mpi_profile.h history.h placement.h Makefile | build
 	$(MPICXX) $(CXXFLAGS) mpi_main.cpp mpi_solver.cpp partition.cpp solver.cpp -o $@
 
-build/poisson_hybrid: mpi_main.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h history.h placement.h Makefile | build
+build/poisson_mpi-profile: mpi_main.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h mpi_profile.h history.h placement.h Makefile | build
+	$(MPICXX) $(CXXFLAGS) -DTASK1_MPI_PROFILE mpi_main.cpp mpi_solver.cpp partition.cpp solver.cpp -o $@
+
+build/poisson_hybrid: mpi_main.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h mpi_profile.h history.h placement.h Makefile | build
 	$(MPICXX) $(CXXFLAGS) -fopenmp mpi_main.cpp mpi_solver.cpp partition.cpp solver.cpp -o $@
 
-build/tests: tests.cpp solver.cpp solver.h pcg.h | build
+build/tests: tests.cpp solver.cpp solver.h pcg.h mpi_profile.h | build
 	$(CXX) $(CXXFLAGS) tests.cpp solver.cpp -o $@
 
-build/tests_omp: tests.cpp solver.cpp solver.h pcg.h | build
+build/tests_omp: tests.cpp solver.cpp solver.h pcg.h mpi_profile.h | build
 	$(CXX) $(CXXFLAGS) -fopenmp tests.cpp solver.cpp -o $@
 
-build/tests_mpi: mpi_tests.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h Makefile | build
+build/tests_mpi: mpi_tests.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h mpi_profile.h Makefile | build
 	$(MPICXX) $(CXXFLAGS) mpi_tests.cpp mpi_solver.cpp partition.cpp solver.cpp -o $@
 
-build/tests_hybrid: mpi_tests.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h Makefile | build
+build/tests_hybrid: mpi_tests.cpp mpi_solver.cpp mpi_solver.h partition.cpp partition.h solver.cpp solver.h pcg.h mpi_profile.h Makefile | build
 	$(MPICXX) $(CXXFLAGS) -fopenmp mpi_tests.cpp mpi_solver.cpp partition.cpp solver.cpp -o $@
 
 test: build/tests
@@ -58,4 +62,4 @@ test-hybrid: build/tests_hybrid
 	OMP_NUM_THREADS=4 $(MPIEXEC) -n 2 ./build/tests_hybrid
 
 clean:
-	rm -f build/poisson_seq build/poisson_omp build/poisson_mpi build/poisson_hybrid build/tests build/tests_omp build/tests_mpi build/tests_hybrid
+	rm -f build/poisson_seq build/poisson_omp build/poisson_mpi build/poisson_mpi-profile build/poisson_hybrid build/tests build/tests_omp build/tests_mpi build/tests_hybrid

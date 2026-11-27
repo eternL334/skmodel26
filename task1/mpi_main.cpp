@@ -1,4 +1,5 @@
 #include "mpi_solver.h"
+#include "mpi_profile.h"
 #include "history.h"
 #include "placement.h"
 #include <algorithm>
@@ -56,6 +57,23 @@ void save_domains(const LocalGrid &g, const std::vector<int> &layout, const std:
     if (!domains) throw std::runtime_error("failed to write domain layout file");
 }
 
+#ifdef TASK1_MPI_PROFILE
+void save_profile(const LocalGrid &g, const Result &r, double seconds,
+                  const std::string &prefix) {
+    const MpiProfile &t = mpi_profile();
+    std::ostringstream path;
+    path << prefix << "_rank" << g.rank << "_phases.txt";
+    std::ofstream out(path.str().c_str());
+    out << "rank nx ny iterations solve_s loop_s pack_s borders_s exchange_x_s exchange_y_s allreduce_s stencil_s vectors_s\n"
+        << std::setprecision(17) << g.rank << ' ' << g.nx << ' ' << g.ny << ' '
+        << r.history.size() << ' ' << seconds << ' ' << t.loop << ' ' << t.pack << ' '
+        << t.borders << ' ' << t.exchange_x << ' ' << t.exchange_y << ' '
+        << t.allreduce << ' ' << t.stencil << ' ' << t.vectors << '\n';
+    out.close();
+    if (!out) throw std::runtime_error("cannot write rank profile");
+}
+#endif
+
 int main(int argc, char **argv) {
     int required = MPI_THREAD_SINGLE, provided;
 #ifdef _OPENMP
@@ -97,6 +115,9 @@ int main(int argc, char **argv) {
         Result r = solve(g,delta);
         double local_seconds = MPI_Wtime()-start, seconds = 0;
         MPI_Reduce(&local_seconds,&seconds,1,MPI_DOUBLE,MPI_MAX,0,g.comm);
+#ifdef TASK1_MPI_PROFILE
+        save_profile(g,r,local_seconds,prefix);
+#endif
         double local_area = 0, area = 0;
         for (int k = 0; k < g.size; ++k) local_area += g.theta[k]*g.hx*g.hy;
         MPI_Reduce(&local_area,&area,1,MPI_DOUBLE,MPI_SUM,0,g.comm);

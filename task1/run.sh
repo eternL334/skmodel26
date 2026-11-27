@@ -37,6 +37,10 @@ case "$mode" in
         for p in 2 4 8 16; do cases+=("mpi 400 600 $p 1"); done
         for p in 4 8 16 32; do cases+=("mpi 800 1200 $p 1"); done
         ;;
+    mpi-profile)
+        cases=("mpi-profile 400 600 2 1" "mpi-profile 400 600 4 1"
+               "mpi-profile 800 1200 8 1" "mpi-profile 800 1200 16 1")
+        ;;
     mpi1)
         cases=("mpi 800 1200 1 1" "seq 800 1200 1 1")
         ;;
@@ -68,7 +72,7 @@ run_case() {
         /polusfs/lsf/openmp/launchOpenMP.py /usr/bin/env "${setting[@]}" "$program" \
             "$m" "$n" 1e-8 "$prefix" > "${prefix}_summary.txt"
     else
-        if [[ $binary = mpi || $binary = hybrid ]]; then mpi=1; fi
+        if [[ $binary = mpi || $binary = mpi-profile || $binary = hybrid ]]; then mpi=1; fi
         mpiexec -n "$p" env "${setting[@]}" "$program" \
             "$m" "$n" 1e-8 "$prefix" > "${prefix}_summary.txt"
     fi
@@ -129,8 +133,13 @@ if [ "$mode" = omp ]; then
     ' "$out/timings.txt" "$out/timings.txt" > "$out/openmp_speedup.txt"
 fi
 
-if [[ $mode = mpi1 && -f report/measurements.json ]]; then
+if [[ $mode = mpi-profile || ( $mode = mpi1 && -f report/measurements.json ) ]]; then
     python_cmd=python3
     if ! command -v python3 >/dev/null; then python_cmd=python; fi
-    "$python_cmd" mpi1_compare.py "$out" report/measurements.json | tee "$out/mpi1_comparison.txt"
+    if [[ $mode = mpi-profile ]]; then
+        "$python_cmd" mpi_phase_summary.py "$out" | tee "$out/phase_summary.txt"
+        tar -czf "$out/mpi-phases.tar.gz" -C "$out" environment.txt timings.txt phase_summary.txt rank_phases.txt run{1..5}
+    else
+        "$python_cmd" mpi1_compare.py "$out" report/measurements.json | tee "$out/mpi1_comparison.txt"
+    fi
 fi

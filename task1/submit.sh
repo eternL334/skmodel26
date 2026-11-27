@@ -2,13 +2,14 @@
 set -euo pipefail
 
 if [ "$#" -ne 1 ]; then
-    echo "Usage: bash submit.sh seq|omp|mpi|hybrid|mpi1" >&2
+    echo "Usage: bash submit.sh seq|omp|mpi|hybrid|mpi1|mpi-profile" >&2
     exit 1
 fi
 mode=$1
 case "$mode" in
     seq|mpi1) p=1; cores=1; span='span[hosts=1]' ;;
     omp) p=1; cores=16; span='span[hosts=1]' ;;
+    mpi-profile) p=16; cores=1; span='span[hosts=1]' ;;
     mpi) p=32; cores=1; span='span[ptile=16]' ;;
     hybrid) p=4; cores=8; span='span[ptile=2]' ;;
     *) echo "Unknown mode: $mode" >&2; exit 1 ;;

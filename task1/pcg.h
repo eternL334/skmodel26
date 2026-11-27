@@ -2,6 +2,7 @@
 #define PCG_H
 
 #include "solver.h"
+#include "mpi_profile.h"
 #include <array>
 #include <cmath>
 #include <limits>
@@ -119,8 +120,12 @@ Result solve_pcg(const GridType &g, const Operator &op, double delta, int max_it
             ans.converged = bnorm == 0;
         });
 
+#ifdef TASK1_MPI_PROFILE
+        mpi_profile().start_loop();
+#endif
         for (int it = 0; it < max_iter && !ans.converged && !error; ++it) {
             op.prepare(p);
+            PHASE_START(stencil_start);
             KahanSum direction[2];
 #ifdef _OPENMP
 #pragma omp for schedule(static) nowait
@@ -133,6 +138,7 @@ Result solve_pcg(const GridType &g, const Operator &op, double delta, int max_it
                     direction[1].add(p[k]*p[k]);
                 }
             }
+            PHASE_END(stencil_start,stencil);
             sums.finish(op,direction,[&](const double *s) {
                 double den = s[0]*cell;
                 if (!(den > 0) || !std::isfinite(den) || !(rho > 0) || !std::isfinite(rho)) {
@@ -147,6 +153,7 @@ Result solve_pcg(const GridType &g, const Operator &op, double delta, int max_it
             for (int pass = 0; pass < 2; ++pass) {
                 bool rollback = pass == 1;
                 if (rollback) op.prepare(ans.w);
+                PHASE_START(update_start);
                 KahanSum state[4];
 #ifdef _OPENMP
 #pragma omp for schedule(static) nowait
@@ -169,6 +176,7 @@ Result solve_pcg(const GridType &g, const Operator &op, double delta, int max_it
                         state[3].add(r[k]*z[k]);
                     }
                 }
+                PHASE_END(update_start,vectors);
                 sums.finish(op,state,[&](const double *s) {
                     double next = -0.5*(s[0]*cell + s[1]*cell);
                     if (!std::isfinite(next) || !std::isfinite(step) ||
@@ -197,13 +205,18 @@ Result solve_pcg(const GridType &g, const Operator &op, double delta, int max_it
                 if (error || !restart) break;
             }
             if (error || ans.converged || it+1 == max_iter) break;
+            PHASE_START(direction_start);
 #ifdef _OPENMP
 #pragma omp for schedule(static)
 #endif
             for (int k = 0; k < g.size; ++k)
                 p[k] = restart ? z[k] : z[k] + beta*p[k];
+            PHASE_END(direction_start,vectors);
         }
 
+#ifdef TASK1_MPI_PROFILE
+        mpi_profile().end_loop();
+#endif
         if (!error) {
             op.prepare(ans.w);
             KahanSum residual[1];
