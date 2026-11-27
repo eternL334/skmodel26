@@ -80,9 +80,9 @@ def analyze(folder, m, n, p, run, topology, ranks_file):
 if __name__ == '__main__':
     folder, = sys.argv[1:]
     topology = {}
-    with open(os.path.join(folder,'environment.txt')) as f:
+    with open(os.path.join(folder,'environment.txt'),'rb') as f:
         for line in f:
-            cols = line.strip().split(',')
+            cols = line.strip().split(b',')
             if len(cols) == 4 and cols[0].isdigit():
                 topology[int(cols[0])] = (int(cols[1]),int(cols[2]))
     keys = list(PHASES)+['other']
