@@ -2,12 +2,12 @@
 set -euo pipefail
 
 if [ "$#" -ne 1 ]; then
-    echo "Usage: bash submit.sh seq|omp|mpi|hybrid" >&2
+    echo "Usage: bash submit.sh seq|omp|mpi|hybrid|mpi1" >&2
     exit 1
 fi
 mode=$1
 case "$mode" in
-    seq) p=1; cores=1; span='span[hosts=1]' ;;
+    seq|mpi1) p=1; cores=1; span='span[hosts=1]' ;;
     omp) p=1; cores=16; span='span[hosts=1]' ;;
     mpi) p=32; cores=1; span='span[ptile=16]' ;;
     hybrid) p=4; cores=8; span='span[ptile=2]' ;;
@@ -20,10 +20,17 @@ if ! command -v bsub >/dev/null; then
     echo "bsub not found. Run this script on Polus with LSF available." >&2
     exit 1
 fi
-if [ ! -x "build/poisson_$mode" ]; then
-    echo "Run make $mode first" >&2
-    exit 1
-fi
+case "$mode" in
+    omp) programs=(seq omp) ;;
+    mpi1) programs=(seq mpi) ;;
+    *) programs=("$mode") ;;
+esac
+for program in "${programs[@]}"; do
+    if [ ! -x "build/poisson_$program" ]; then
+        echo "Run make $program first" >&2
+        exit 1
+    fi
+done
 if [ "$mode" = seq ] || [ "$mode" = omp ]; then
     if [ ! -x /polusfs/lsf/openmp/launchOpenMP.py ]; then
         echo "OpenMP launcher not found: /polusfs/lsf/openmp/launchOpenMP.py" >&2
@@ -36,10 +43,6 @@ else
     fi
 fi
 
-if [ "$mode" = omp ] && [ ! -x build/poisson_seq ]; then
-    echo "Run make seq for the one-core comparison" >&2
-    exit 1
-fi
 base=${RESULTS_DIR:-$root/results}
 mkdir -p "$base"
 base=$(cd "$base" && pwd)

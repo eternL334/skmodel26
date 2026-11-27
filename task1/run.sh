@@ -37,6 +37,9 @@ case "$mode" in
         for p in 2 4 8 16; do cases+=("mpi 400 600 $p 1"); done
         for p in 4 8 16 32; do cases+=("mpi 800 1200 $p 1"); done
         ;;
+    mpi1)
+        cases=("mpi 800 1200 1 1" "seq 800 1200 1 1")
+        ;;
     hybrid)
         for p in 1 2; do cases+=("hybrid 80 80 $p 4"); done
         for t in 1 2 4 8; do cases+=("hybrid 400 600 2 $t" "hybrid 800 1200 4 $t"); done
@@ -52,7 +55,11 @@ run_case() {
     if (( trial > 1 )) || { (( m > 80 )) && [ "$mode" != seq ]; }; then
         setting+=(TASK1_SKIP_FIELD=1)
     fi
-    if [ "$mode" = seq ] || { [ "$mode" = omp ] && (( t == 1 )); }; then
+    local pin=0
+    case "$mode:$t" in
+        seq:1|omp:1|mpi1:1) pin=1 ;;
+    esac
+    if (( pin )); then
         setting+=(TASK1_PIN_CPU="${control_cpu:-first}")
     fi
     export OMP_NUM_THREADS=$t
@@ -61,7 +68,7 @@ run_case() {
         /polusfs/lsf/openmp/launchOpenMP.py /usr/bin/env "${setting[@]}" "$program" \
             "$m" "$n" 1e-8 "$prefix" > "${prefix}_summary.txt"
     else
-        mpi=1
+        if [[ $binary = mpi || $binary = hybrid ]]; then mpi=1; fi
         mpiexec -n "$p" env "${setting[@]}" "$program" \
             "$m" "$n" 1e-8 "$prefix" > "${prefix}_summary.txt"
     fi
@@ -76,13 +83,14 @@ run_case() {
         echo "Unexpected solver result in ${prefix}_summary.txt" >&2
         exit 1
     fi
-    if [[ ( $mode = omp || $mode = seq ) && $t = 1 ]]; then
-        local cpu
-        cpu=$(awk 'NR == 2 && $4 == $5 {print $4}' "${prefix}_rank0_placement.txt")
-        if [[ -z $cpu || $cpu != "${control_cpu:-$cpu}" ]]; then
-            echo "One-thread control changed CPU in ${prefix}_rank0_placement.txt" >&2
+    if (( pin )); then
+        local host cpu
+        read -r host cpu <<< "$(awk 'NR == 2 && $4 == $5 {print $1, $4}' "${prefix}_rank0_placement.txt")"
+        if [[ -z $cpu || $cpu != "${control_cpu:-$cpu}" || $host != "${control_host:-$host}" ]]; then
+            echo "One-thread control changed host or CPU in ${prefix}_rank0_placement.txt" >&2
             exit 1
         fi
+        control_host=$host
         control_cpu=$cpu
     fi
 }
@@ -119,4 +127,10 @@ if [ "$mode" = omp ]; then
         }
         $1 == "omp" { print $2, $3, $5, seq[$2]/$7, one[$2]/$7 }
     ' "$out/timings.txt" "$out/timings.txt" > "$out/openmp_speedup.txt"
+fi
+
+if [[ $mode = mpi1 && -f report/measurements.json ]]; then
+    python_cmd=python3
+    if ! command -v python3 >/dev/null; then python_cmd=python; fi
+    "$python_cmd" mpi1_compare.py "$out" report/measurements.json | tee "$out/mpi1_comparison.txt"
 fi
